@@ -4,6 +4,7 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config";
+import { verifyToken } from "../middleware/auth.middleware";
 import { authTable, AuthRecord } from "./auth.model";
 import {
 	sendOtpDTO,
@@ -40,6 +41,11 @@ type PublicAuthRecord = Omit<AuthRecord, "passwordHash">;
 type AuthResponse = {
 	user: PublicAuthRecord;
 	tokens: AuthTokens;
+};
+
+type RefreshTokenPayload = JwtPayload & {
+	sub?: string;
+	tokenVersion?: number;
 };
 
 class AuthService {
@@ -160,29 +166,33 @@ class AuthService {
 				StatusCodes.INTERNAL_SERVER_ERROR,
 			);
 		}
-		let decoded: JwtPayload & { sub?: string; tokenVersion?: number };
-		try {
-			decoded = jwt.verify(
-				payload.refreshToken,
-				refreshSecret,
-			) as JwtPayload & {
-				sub?: string;
-				tokenVersion?: number;
-			};
-		} catch (_error) {
+		const verification = verifyToken<RefreshTokenPayload>(
+			payload.refreshToken,
+			refreshSecret,
+		);
+		if (verification.expired) {
+			throw this.createError(
+				"Refresh token expired.",
+				StatusCodes.UNAUTHORIZED,
+			);
+		}
+		if (!verification.valid || !verification.payload) {
 			throw this.createError(
 				"Invalid refresh token.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		if (!decoded.sub || decoded.tokenVersion === undefined) {
+		if (
+			!verification.payload.sub ||
+			verification.payload.tokenVersion === undefined
+		) {
 			throw this.createError(
 				"Malformed refresh token.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		const user = await this.getUserById(decoded.sub);
-		if (!user || user.tokenVersion !== decoded.tokenVersion) {
+		const user = await this.getUserById(verification.payload.sub);
+		if (!user || user.tokenVersion !== verification.payload.tokenVersion) {
 			throw this.createError(
 				"Invalid refresh token.",
 				StatusCodes.UNAUTHORIZED,
@@ -203,24 +213,23 @@ class AuthService {
 				StatusCodes.INTERNAL_SERVER_ERROR,
 			);
 		}
-		let decoded: JwtPayload & { sub?: string };
-		try {
-			decoded = jwt.verify(refreshToken, refreshSecret) as JwtPayload & {
-				sub?: string;
-			};
-		} catch (_error) {
+		const verification = verifyToken<JwtPayload & { sub?: string }>(
+			refreshToken,
+			refreshSecret,
+		);
+		if (verification.expired) {
 			throw this.createError(
-				"Invalid refresh token.",
+				"Refresh token expired.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		if (!decoded.sub) {
+		if (!verification.valid || !verification.payload?.sub) {
 			throw this.createError(
 				"Malformed refresh token.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		await this.revokeRefreshTokens(decoded.sub);
+		await this.revokeRefreshTokens(verification.payload.sub);
 	}
 
 	private async revokeRefreshTokens(userId: string): Promise<void> {

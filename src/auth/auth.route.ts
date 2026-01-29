@@ -1,6 +1,6 @@
 import express, { Router } from "express";
 import authController from "./auth.controller";
-import { validate } from "../helpers/validation.middleware";
+import { validate } from "../middleware/validation.middleware";
 import scheme from "./auth.scheme";
 
 class AuthRoutes {
