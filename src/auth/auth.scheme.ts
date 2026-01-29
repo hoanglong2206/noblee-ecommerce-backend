@@ -33,6 +33,20 @@ class AuthScheme {
 	public resendOtp(): ObjectSchema {
 		return this.sendOtp();
 	}
+
+	public updateRole(): ObjectSchema {
+		return Joi.object({
+			targetUserId: Joi.string().guid({ version: "uuidv4" }).required(),
+			role: Joi.string().valid("user", "staff").required(),
+		});
+	}
+
+	public setAccountDisabled(): ObjectSchema {
+		return Joi.object({
+			targetUserId: Joi.string().guid({ version: "uuidv4" }).required(),
+			disabled: Joi.boolean().required(),
+		});
+	}
 }
 
 export default new AuthScheme();

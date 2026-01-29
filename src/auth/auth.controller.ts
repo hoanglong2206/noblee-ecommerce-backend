@@ -100,6 +100,57 @@ class AuthController {
 		}
 	};
 
+	public updateRole = async (req: Request, res: Response): Promise<void> => {
+		try {
+			const actor = req.authUser;
+			if (!actor) {
+				res.status(StatusCodes.UNAUTHORIZED).json({
+					message: "Unauthorized.",
+				});
+				return;
+			}
+			const { targetUserId, role } = req.body;
+			const user = await authService.updateUserRole(
+				actor.id,
+				targetUserId,
+				role,
+			);
+			res.status(StatusCodes.OK).json({
+				message: "User role updated successfully.",
+				user,
+			});
+		} catch (error) {
+			this.handleError(error, res);
+		}
+	};
+
+	public setAccountDisabled = async (
+		req: Request,
+		res: Response,
+	): Promise<void> => {
+		try {
+			const actor = req.authUser;
+			if (!actor) {
+				res.status(StatusCodes.UNAUTHORIZED).json({
+					message: "Unauthorized.",
+				});
+				return;
+			}
+			const { targetUserId, disabled } = req.body;
+			const user = await authService.setAccountDisabled(
+				actor.id,
+				targetUserId,
+				disabled,
+			);
+			res.status(StatusCodes.OK).json({
+				message: "Account status updated successfully.",
+				user,
+			});
+		} catch (error) {
+			this.handleError(error, res);
+		}
+	};
+
 	private setAuthCookies(
 		res: Response,
 		tokens: {
