@@ -9,7 +9,6 @@ export interface verifyOtpDTO {
 
 export interface registerDTO {
 	fullname: string;
-	username: string;
 	email: string;
 	password: string;
 }

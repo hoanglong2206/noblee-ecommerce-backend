@@ -112,13 +112,11 @@ class AuthService {
 			);
 		}
 		await this.ensureEmailNotRegistered(email);
-		await this.ensureUsernameNotTaken(payload.username);
 		const passwordHash = await bcrypt.hash(payload.password, this.saltRounds);
 		const [record] = await db
 			.insert(authTable)
 			.values({
 				fullname: payload.fullname.trim(),
-				username: payload.username.trim().toLowerCase(),
 				email,
 				passwordHash,
 				isVerified: true,
@@ -255,17 +253,6 @@ class AuthService {
 		}
 	}
 
-	private async ensureUsernameNotTaken(username: string): Promise<void> {
-		const result = await db
-			.select()
-			.from(authTable)
-			.where(eq(authTable.username, username.trim().toLowerCase()))
-			.limit(1);
-		if (result.length) {
-			throw this.createError("Username already taken.", StatusCodes.CONFLICT);
-		}
-	}
-
 	private async getUserByEmail(email: string): Promise<AuthRecord | undefined> {
 		const result = await db
 			.select()
@@ -309,7 +296,6 @@ class AuthService {
 			{
 				sub: user.id,
 				email: user.email,
-				username: user.username,
 			},
 			accessSecret,
 			{ expiresIn: accessExpiresSeconds },

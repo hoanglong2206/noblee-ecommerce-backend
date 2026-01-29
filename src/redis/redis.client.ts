@@ -9,7 +9,6 @@ export const redisClient = redisUrl
 			lazyConnect: false,
 			host: config.REDIS_HOST?.trim() || "127.0.0.1",
 			port: config.REDIS_PORT || 6379,
-			username: config.REDIS_USERNAME || undefined,
 			password: config.REDIS_PASSWORD || undefined,
 			tls: config.REDIS_TLS ? {} : undefined,
 		});
