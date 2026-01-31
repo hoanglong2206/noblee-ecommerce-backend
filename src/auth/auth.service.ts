@@ -4,7 +4,7 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config";
-import { verifyToken } from "../middleware/auth.middleware";
+import { verifyToken } from "../shared/middleware/auth.middleware";
 import { authTable, AuthRecord, AuthRole } from "./auth.model";
 import {
 	sendOtpDTO,
@@ -13,7 +13,7 @@ import {
 	loginDTO,
 	refreshTokenDTO,
 } from "./auth.interface";
-import { mailer } from "../helpers/mailer";
+import { mailer } from "../shared/helpers/mailer";
 import {
 	storeOtpHash,
 	getOtpHash,
@@ -25,7 +25,7 @@ import {
 	markOtpVerified,
 	isOtpVerified,
 	clearOtpVerified,
-} from "../redis/otp.store";
+} from "../shared/redis/otp.store";
 
 type ServiceError = Error & { statusCode?: number };
 

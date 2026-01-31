@@ -6,9 +6,9 @@ import jwt, {
 	TokenExpiredError,
 	VerifyOptions,
 } from "jsonwebtoken";
-import { db } from "../database";
-import { config } from "../config";
-import { authTable, AuthRecord, AuthRole } from "../auth/auth.model";
+import { db } from "../../database";
+import { config } from "../../config";
+import { authTable, AuthRecord, AuthRole } from "../../auth/auth.model";
 
 export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 	valid: boolean;

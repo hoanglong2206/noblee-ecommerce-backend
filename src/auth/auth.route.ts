@@ -1,8 +1,8 @@
 import express, { Router } from "express";
 import authController from "./auth.controller";
-import { validate } from "../middleware/validation.middleware";
+import { validate } from "../shared/middleware/validation.middleware";
 import scheme from "./auth.scheme";
-import { requireAdmin } from "../middleware/auth.middleware";
+import { requireAdmin } from "../shared/middleware/auth.middleware";
 
 class AuthRoutes {
 	private router: Router;

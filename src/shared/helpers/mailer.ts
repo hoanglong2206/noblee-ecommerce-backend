@@ -1,5 +1,5 @@
 import nodemailer, { Transporter } from "nodemailer";
-import { config } from "../config";
+import { config } from "../../config";
 
 class Mailer {
 	private transporter: Transporter;
