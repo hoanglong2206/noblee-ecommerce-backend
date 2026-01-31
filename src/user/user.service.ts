@@ -12,6 +12,7 @@ import {
 } from "./user.model";
 import {
 	CreateAddressDTO,
+	UserRegisteredMessage,
 	UpdateAddressDTO,
 	UpdateAvatarDTO,
 	UpdateUserProfileDTO,
@@ -21,6 +22,41 @@ import { isUploadSuccess, uploads } from "../shared/helpers/cloudinary";
 type ServiceError = Error & { statusCode?: number };
 
 class UserService {
+	public async syncProfileFromAuth(
+		payload: UserRegisteredMessage,
+	): Promise<UserProfileRecord> {
+		if (!payload.id) {
+			throw this.createError(
+				"User id is required to sync profile.",
+				StatusCodes.BAD_REQUEST,
+			);
+		}
+		const fullName = this.toRequiredTrim(payload.fullname);
+		const email = this.toRequiredTrim(payload.email).toLowerCase();
+		const [record] = await db
+			.insert(userProfileTable)
+			.values({
+				id: payload.id,
+				fullName,
+				email,
+			})
+			.onConflictDoUpdate({
+				target: userProfileTable.id,
+				set: {
+					fullName,
+					email,
+				},
+			})
+			.returning();
+		if (!record) {
+			throw this.createError(
+				"Failed to persist user profile.",
+				StatusCodes.INTERNAL_SERVER_ERROR,
+			);
+		}
+		return record;
+	}
+
 	public async getProfile(userId: string): Promise<UserProfileRecord> {
 		return this.requireProfile(userId);
 	}

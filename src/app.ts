@@ -8,6 +8,7 @@ import cors from "cors";
 import { config } from "./config";
 import { appRoutes } from "./routes";
 import http from "http";
+import { consumeCreateUserMessage } from "./user/user.consumer";
 
 export class App {
 	private app: Application;
@@ -65,7 +66,7 @@ export class App {
 
 	private async startQueues(): Promise<void> {
 		try {
-			// Initialize your queues here
+			await consumeCreateUserMessage();
 			console.log("Queues initialized successfully.");
 		} catch (error) {
 			console.error("Failed to initialize queues:", error);

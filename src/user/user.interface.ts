@@ -1,5 +1,11 @@
 import { AddressType, UserGender } from "./user.model";
 
+export interface UserRegisteredMessage {
+	id: string;
+	fullname: string;
+	email: string;
+}
+
 export interface UpdateUserProfileDTO {
 	fullname?: string;
 	phoneNumber?: string | null;

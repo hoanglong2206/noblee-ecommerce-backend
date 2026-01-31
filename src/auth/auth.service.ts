@@ -14,6 +14,9 @@ import {
 	refreshTokenDTO,
 } from "./auth.interface";
 import { mailer } from "../shared/helpers/mailer";
+import { publishDirectMessage } from "../shared/queues/publisher";
+import { authConnection } from "./auth.connection";
+import { UserRegisteredMessage } from "../user/user.interface";
 import {
 	storeOtpHash,
 	getOtpHash,
@@ -130,6 +133,7 @@ class AuthService {
 		}
 		await deleteOtpData(email);
 		const tokens = this.createTokens(record);
+		await this.enqueueUserProfileCreation(record);
 		return {
 			user: this.sanitizeUser(record),
 			tokens,
@@ -459,6 +463,25 @@ class AuthService {
 
 	private isAssignableRole(role: AuthRole): boolean {
 		return role === "user" || role === "staff";
+	}
+
+	private async enqueueUserProfileCreation(user: AuthRecord): Promise<void> {
+		const message: UserRegisteredMessage = {
+			id: user.id,
+			fullname: user.fullname,
+			email: user.email,
+		};
+		try {
+			await publishDirectMessage({
+				channelFactory: authConnection,
+				exchangeName: "user.register",
+				routingKey: "user.create",
+				message: JSON.stringify({ data: message }),
+				logMessage: `Queued profile creation for ${user.email}`,
+			});
+		} catch (error) {
+			console.error("Failed to enqueue user profile creation:", error);
+		}
 	}
 }
 
