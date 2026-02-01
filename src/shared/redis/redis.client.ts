@@ -1,22 +1,29 @@
-import Redis from "ioredis";
+import Redis, { RedisOptions } from "ioredis";
+
 import { config } from "../../config";
 
-const redisUrl = config.REDIS_URL?.trim() || undefined;
+const redisOptions: RedisOptions = {
+	username: config.REDIS_USERNAME,
+	password: config.REDIS_PASSWORD,
+};
 
-export const redisClient = redisUrl
-	? new Redis(redisUrl, { lazyConnect: false })
-	: new Redis({
-			lazyConnect: false,
-			host: config.REDIS_HOST?.trim() || "127.0.0.1",
-			port: config.REDIS_PORT || 6379,
-			password: config.REDIS_PASSWORD || undefined,
-			tls: config.REDIS_TLS ? {} : undefined,
-		});
+if (config.REDIS_HOST) {
+	redisOptions.host = config.REDIS_HOST;
+}
 
-redisClient.on("error", (error) => {
-	console.error("Redis error:", error);
-});
+if (config.REDIS_PORT) {
+	redisOptions.port = config.REDIS_PORT;
+}
 
-redisClient.on("ready", () => {
-	console.log("Redis connected");
+if (config.REDIS_TLS) {
+	redisOptions.tls = {
+		rejectUnauthorized: false,
+		servername: config.REDIS_HOST,
+	};
+}
+
+export const redisClient = new Redis(redisOptions);
+
+redisClient.on("error", (err) => {
+	console.error("Redis Client Error", err);
 });

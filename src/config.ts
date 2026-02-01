@@ -17,11 +17,12 @@ class Config {
 	public CLOUD_NAME: string | undefined;
 	public CLOUD_API_KEY: string | undefined;
 	public CLOUD_API_SECRET: string | undefined;
-	public REDIS_URL: string | undefined;
 	public REDIS_HOST: string | undefined;
 	public REDIS_PORT: number | undefined;
+	public REDIS_USERNAME: string | undefined;
 	public REDIS_PASSWORD: string | undefined;
 	public REDIS_TLS: boolean;
+
 	public SMTP_HOST: string | undefined;
 	public SMTP_PORT: number | undefined;
 	public SMTP_SECURE: boolean;
@@ -49,9 +50,10 @@ class Config {
 		this.CLOUD_NAME = process.env.CLOUD_NAME || "";
 		this.CLOUD_API_KEY = process.env.CLOUD_API_KEY || "";
 		this.CLOUD_API_SECRET = process.env.CLOUD_API_SECRET || "";
-		this.REDIS_URL = process.env.REDIS_URL || "";
+
 		this.REDIS_HOST = process.env.REDIS_HOST || "";
-		this.REDIS_PORT = Number(process.env.REDIS_PORT) || 6379;
+		this.REDIS_PORT = Number(process.env.REDIS_PORT) || 0;
+		this.REDIS_USERNAME = process.env.REDIS_USERNAME || "";
 		this.REDIS_PASSWORD = process.env.REDIS_PASSWORD || "";
 		this.REDIS_TLS =
 			(process.env.REDIS_TLS || "false").toLowerCase() === "true";

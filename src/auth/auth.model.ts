@@ -22,7 +22,6 @@ export const authTable = pgTable(
 		isVerified: boolean("is_verified").notNull().default(false),
 		tokenVersion: integer("token_version").notNull().default(0),
 		role: authRoleEnum("role").notNull().default("user"),
-		avatarUrl: text("avatar_url"),
 		isDisabled: boolean("is_disabled").notNull().default(false),
 		createdAt: timestamp("created_at", {
 			withTimezone: true,
