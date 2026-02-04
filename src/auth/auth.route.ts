@@ -2,7 +2,7 @@ import express, { Router } from "express";
 import authController from "./auth.controller";
 import { validate } from "../shared/middleware/validation.middleware";
 import scheme from "./auth.scheme";
-import { requireAdmin } from "../shared/middleware/auth.middleware";
+import { requirePermission } from "../shared/middleware/auth.middleware";
 
 class AuthRoutes {
 	private router: Router;
@@ -41,13 +41,13 @@ class AuthRoutes {
 		this.router.post("/logout", authController.logout);
 		this.router.patch(
 			"/role",
-			requireAdmin,
+			requirePermission("staff:update"),
 			validate(scheme.updateRole()),
 			authController.updateRole,
 		);
 		this.router.patch(
 			"/disable",
-			requireAdmin,
+			requirePermission("staff:update"),
 			validate(scheme.setAccountDisabled()),
 			authController.setAccountDisabled,
 		);

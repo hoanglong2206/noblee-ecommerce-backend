@@ -1,5 +1,3 @@
-import { AuthRole } from "./auth.model";
-
 export interface sendOtpDTO {
 	email: string;
 }
@@ -26,7 +24,7 @@ export interface refreshTokenDTO {
 
 export interface updateUserRoleDTO {
 	targetUserId: string;
-	role: AuthRole;
+	role: string;
 }
 
 export interface setAccountDisabledDTO {

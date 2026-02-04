@@ -5,7 +5,9 @@ import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config";
 import { verifyToken } from "../shared/middleware/auth.middleware";
-import { authTable, AuthRecord, AuthRole } from "./auth.model";
+import { authTable, AuthRecord } from "./auth.model";
+import { roleService } from "./role/role.service";
+import { roleEnum, RoleValue } from "./role/role.model";
 import {
 	sendOtpDTO,
 	verifyOtpDTO,
@@ -240,34 +242,45 @@ class AuthService {
 	public async updateUserRole(
 		actorId: string,
 		targetUserId: string,
-		role: AuthRole,
+		role: string,
 	): Promise<PublicAuthRecord> {
-		if (!this.isAssignableRole(role)) {
-			throw this.createError("Invalid target role.", StatusCodes.BAD_REQUEST);
+		const targetRole = this.toRoleValue(role);
+		if (targetRole === "super_admin") {
+			throw this.createError(
+				"Cannot assign super admin role via API.",
+				StatusCodes.BAD_REQUEST,
+			);
 		}
 		const actor = await this.getUserById(actorId);
 		if (!actor) {
 			throw this.createError("Actor not found.", StatusCodes.NOT_FOUND);
 		}
-		if (!this.isAdmin(actor)) {
-			throw this.createError(
-				"Insufficient permissions.",
-				StatusCodes.FORBIDDEN,
-			);
-		}
+		await roleService.assertPermission({
+			role: actor.role,
+			permission: "staff:update",
+			context: { userId: actor.id, targetRole },
+			message: "Insufficient permissions.",
+		});
 		const target = await this.getUserById(targetUserId);
 		if (!target) {
 			throw this.createError("User not found.", StatusCodes.NOT_FOUND);
 		}
-		if (this.isAdmin(target)) {
+		const actorIsSuperAdmin = actor.role === "super_admin";
+		if (target.role === "super_admin" && !actorIsSuperAdmin) {
 			throw this.createError(
-				"Cannot modify another admin.",
+				"Cannot modify a super admin.",
+				StatusCodes.FORBIDDEN,
+			);
+		}
+		if (targetRole === "admin" && !actorIsSuperAdmin) {
+			throw this.createError(
+				"Only super admins can promote admins.",
 				StatusCodes.FORBIDDEN,
 			);
 		}
 		const [updated] = await db
 			.update(authTable)
-			.set({ role })
+			.set({ role: targetRole })
 			.where(eq(authTable.id, targetUserId))
 			.returning();
 		if (!updated) {
@@ -288,19 +301,19 @@ class AuthService {
 		if (!actor) {
 			throw this.createError("Actor not found.", StatusCodes.NOT_FOUND);
 		}
-		if (!this.isAdmin(actor)) {
-			throw this.createError(
-				"Insufficient permissions.",
-				StatusCodes.FORBIDDEN,
-			);
-		}
+		await roleService.assertPermission({
+			role: actor.role,
+			permission: "staff:update",
+			context: { userId: actor.id },
+			message: "Insufficient permissions.",
+		});
 		const target = await this.getUserById(targetUserId);
 		if (!target) {
 			throw this.createError("User not found.", StatusCodes.NOT_FOUND);
 		}
-		if (this.isAdmin(target)) {
+		if (target.role === "super_admin" && actor.role !== "super_admin") {
 			throw this.createError(
-				"Cannot disable another admin.",
+				"Cannot disable a super admin.",
 				StatusCodes.FORBIDDEN,
 			);
 		}
@@ -457,12 +470,11 @@ class AuthService {
 		return error;
 	}
 
-	private isAdmin(user: AuthRecord): boolean {
-		return user.role === "admin";
-	}
-
-	private isAssignableRole(role: AuthRole): boolean {
-		return role === "user" || role === "staff";
+	private toRoleValue(role: string): RoleValue {
+		if (roleEnum.enumValues.includes(role as RoleValue)) {
+			return role as RoleValue;
+		}
+		throw this.createError("Invalid target role.", StatusCodes.BAD_REQUEST);
 	}
 
 	private async enqueueUserProfileCreation(user: AuthRecord): Promise<void> {
