@@ -12,7 +12,10 @@ export type WildcardPermissionName =
 	| `${ResourceValue}:*`
 	| "*:*";
 
-export type PermissionCondition = Record<string, string | number | boolean>;
+export type PermissionCondition = Record<
+	string,
+	string | number | boolean | Array<string | number | boolean>
+>;
 
 export interface PermissionDefinition {
 	name: PermissionName;

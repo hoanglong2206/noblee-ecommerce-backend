@@ -27,6 +27,17 @@ type PermissionGrant = {
 	conditions?: PermissionCondition;
 };
 
+type ResourceValue = (typeof resourceEnum.enumValues)[number];
+type ActionValue = (typeof actionEnum.enumValues)[number];
+type ConditionPrimitive = string | number | boolean;
+type ConditionValue = ConditionPrimitive | ConditionPrimitive[];
+
+const isResourceValue = (value: string): value is ResourceValue =>
+	resourceEnum.enumValues.includes(value as ResourceValue);
+
+const isActionValue = (value: string): value is ActionValue =>
+	actionEnum.enumValues.includes(value as ActionValue);
+
 const DEFAULT_ROLE_DEFINITIONS: RoleDefinitionSeed[] = [
 	{
 		role: "super_admin",
@@ -39,11 +50,7 @@ const DEFAULT_ROLE_DEFINITIONS: RoleDefinitionSeed[] = [
 	{
 		role: "admin",
 		permissions: [
-			{ permission: "staff:list" },
-			{ permission: "staff:read" },
-			{ permission: "staff:create" },
-			{ permission: "staff:update" },
-			{ permission: "staff:delete" },
+			{ permission: "staff:*", conditions: { role: ["manager", "support"] } },
 			{ permission: "customers:*" },
 			{ permission: "products:*" },
 			{ permission: "categories:*" },
@@ -268,14 +275,20 @@ class RoleService {
 	private createPermissionDefinition(
 		permission: PermissionName,
 	): PermissionDefinition {
-		const [resource, action] = permission.split(":");
-		if (!resourceEnum.enumValues.includes(resource)) {
+		const [resourceRaw, actionRaw] = permission.split(":");
+		if (!resourceRaw || !actionRaw) {
+			throw this.createError(
+				`Invalid permission name: ${permission}`,
+				StatusCodes.BAD_REQUEST,
+			);
+		}
+		if (!isResourceValue(resourceRaw)) {
 			throw this.createError(
 				`Unknown resource in permission: ${permission}`,
 				StatusCodes.BAD_REQUEST,
 			);
 		}
-		if (!actionEnum.enumValues.includes(action)) {
+		if (!isActionValue(actionRaw)) {
 			throw this.createError(
 				`Unknown action in permission: ${permission}`,
 				StatusCodes.BAD_REQUEST,
@@ -283,18 +296,15 @@ class RoleService {
 		}
 		return {
 			name: permission,
-			resource: resource as (typeof resourceEnum.enumValues)[number],
-			action: action as (typeof actionEnum.enumValues)[number],
-			description: this.describePermission(
-				resource as (typeof resourceEnum.enumValues)[number],
-				action as (typeof actionEnum.enumValues)[number],
-			),
+			resource: resourceRaw,
+			action: actionRaw,
+			description: this.describePermission(resourceRaw, actionRaw),
 		};
 	}
 
 	private describePermission(
-		resource: (typeof resourceEnum.enumValues)[number],
-		action: (typeof actionEnum.enumValues)[number],
+		resource: ResourceValue,
+		action: ActionValue,
 	): string {
 		const format = (value: string): string =>
 			value
@@ -381,8 +391,22 @@ class RoleService {
 			return false;
 		}
 		for (const [key, value] of Object.entries(conditions)) {
-			const expected = this.resolveConditionValue(value, context);
-			if (expected === undefined || context[key] !== expected) {
+			const expectedValues = this.normalizeConditionValue(
+				this.resolveConditionValue(value, context),
+			);
+			if (expectedValues.length === 0) {
+				return false;
+			}
+			const actualValues = this.normalizeConditionValue(
+				context[key] as ConditionValue | undefined,
+			);
+			if (actualValues.length === 0) {
+				return false;
+			}
+			const allMatch = actualValues.every((actual) =>
+				expectedValues.includes(actual),
+			);
+			if (!allMatch) {
 				return false;
 			}
 		}
@@ -390,9 +414,17 @@ class RoleService {
 	}
 
 	private resolveConditionValue(
-		value: string | number | boolean,
+		value: ConditionValue,
 		context?: PermissionCheckContext,
-	): string | number | boolean | undefined {
+	): ConditionValue | undefined {
+		if (Array.isArray(value)) {
+			const resolved: ConditionPrimitive[] = [];
+			for (const entry of value) {
+				const result = this.resolveConditionValue(entry, context);
+				resolved.push(...this.normalizeConditionValue(result));
+			}
+			return resolved.length > 0 ? resolved : undefined;
+		}
 		if (typeof value !== "string") {
 			return value;
 		}
@@ -400,8 +432,44 @@ class RoleService {
 		if (!placeholderMatch) {
 			return value;
 		}
-		const key = placeholderMatch[1];
-		return context ? context[key] : undefined;
+		if (!context) {
+			return undefined;
+		}
+		const resolved = context[placeholderMatch[1]];
+		if (Array.isArray(resolved)) {
+			const primitives = resolved.filter(
+				(entry): entry is ConditionPrimitive =>
+					typeof entry === "string" ||
+					typeof entry === "number" ||
+					typeof entry === "boolean",
+			);
+			return primitives.length > 0 ? primitives : undefined;
+		}
+		if (
+			typeof resolved === "string" ||
+			typeof resolved === "number" ||
+			typeof resolved === "boolean"
+		) {
+			return resolved;
+		}
+		return undefined;
+	}
+
+	private normalizeConditionValue(
+		value: ConditionValue | undefined,
+	): ConditionPrimitive[] {
+		if (value === undefined) {
+			return [];
+		}
+		if (Array.isArray(value)) {
+			return value.filter(
+				(entry): entry is ConditionPrimitive =>
+					typeof entry === "string" ||
+					typeof entry === "number" ||
+					typeof entry === "boolean",
+			);
+		}
+		return [value];
 	}
 
 	private createError(message: string, statusCode: number): RoleServiceError {
