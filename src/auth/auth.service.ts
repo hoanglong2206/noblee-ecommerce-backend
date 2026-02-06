@@ -6,8 +6,6 @@ import { StatusCodes } from "http-status-codes";
 import { config } from "../config";
 import { verifyToken } from "../shared/middleware/auth.middleware";
 import { authTable, AuthRecord } from "./auth.model";
-import { roleService } from "./role/role.service";
-import { roleEnum, RoleValue } from "./role/role.model";
 import {
 	sendOtpDTO,
 	verifyOtpDTO,
@@ -239,98 +237,6 @@ class AuthService {
 		await this.revokeRefreshTokens(verification.payload.sub);
 	}
 
-	public async updateUserRole(
-		actorId: string,
-		targetUserId: string,
-		role: string,
-	): Promise<PublicAuthRecord> {
-		const targetRole = this.toRoleValue(role);
-		if (targetRole === "super_admin") {
-			throw this.createError(
-				"Cannot assign super admin role via API.",
-				StatusCodes.BAD_REQUEST,
-			);
-		}
-		const actor = await this.getUserById(actorId);
-		if (!actor) {
-			throw this.createError("Actor not found.", StatusCodes.NOT_FOUND);
-		}
-		await roleService.assertPermission({
-			role: actor.role,
-			permission: "staff:update",
-			context: { userId: actor.id, targetRole },
-			message: "Insufficient permissions.",
-		});
-		const target = await this.getUserById(targetUserId);
-		if (!target) {
-			throw this.createError("User not found.", StatusCodes.NOT_FOUND);
-		}
-		const actorIsSuperAdmin = actor.role === "super_admin";
-		if (target.role === "super_admin" && !actorIsSuperAdmin) {
-			throw this.createError(
-				"Cannot modify a super admin.",
-				StatusCodes.FORBIDDEN,
-			);
-		}
-		if (targetRole === "admin" && !actorIsSuperAdmin) {
-			throw this.createError(
-				"Only super admins can promote admins.",
-				StatusCodes.FORBIDDEN,
-			);
-		}
-		const [updated] = await db
-			.update(authTable)
-			.set({ role: targetRole })
-			.where(eq(authTable.id, targetUserId))
-			.returning();
-		if (!updated) {
-			throw this.createError(
-				"Failed to update role.",
-				StatusCodes.INTERNAL_SERVER_ERROR,
-			);
-		}
-		return this.sanitizeUser(updated);
-	}
-
-	public async setAccountDisabled(
-		actorId: string,
-		targetUserId: string,
-		disabled: boolean,
-	): Promise<PublicAuthRecord> {
-		const actor = await this.getUserById(actorId);
-		if (!actor) {
-			throw this.createError("Actor not found.", StatusCodes.NOT_FOUND);
-		}
-		await roleService.assertPermission({
-			role: actor.role,
-			permission: "staff:update",
-			context: { userId: actor.id },
-			message: "Insufficient permissions.",
-		});
-		const target = await this.getUserById(targetUserId);
-		if (!target) {
-			throw this.createError("User not found.", StatusCodes.NOT_FOUND);
-		}
-		if (target.role === "super_admin" && actor.role !== "super_admin") {
-			throw this.createError(
-				"Cannot disable a super admin.",
-				StatusCodes.FORBIDDEN,
-			);
-		}
-		const [updated] = await db
-			.update(authTable)
-			.set({ isDisabled: disabled })
-			.where(eq(authTable.id, targetUserId))
-			.returning();
-		if (!updated) {
-			throw this.createError(
-				"Failed to update account status.",
-				StatusCodes.INTERNAL_SERVER_ERROR,
-			);
-		}
-		return this.sanitizeUser(updated);
-	}
-
 	private async revokeRefreshTokens(userId: string): Promise<void> {
 		const nextVersion = await this.getNextTokenVersion(userId);
 		await db
@@ -468,13 +374,6 @@ class AuthService {
 		const error = new Error(message) as ServiceError;
 		error.statusCode = statusCode;
 		return error;
-	}
-
-	private toRoleValue(role: string): RoleValue {
-		if (roleEnum.enumValues.includes(role as RoleValue)) {
-			return role as RoleValue;
-		}
-		throw this.createError("Invalid target role.", StatusCodes.BAD_REQUEST);
 	}
 
 	private async enqueueUserProfileCreation(user: AuthRecord): Promise<void> {

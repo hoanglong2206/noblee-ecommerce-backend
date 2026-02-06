@@ -9,11 +9,6 @@ import jwt, {
 import { db } from "../../database";
 import { config } from "../../config";
 import { authTable, AuthRecord, AuthRole } from "../../auth/auth.model";
-import { roleService } from "../../auth/role/role.service";
-import {
-	PermissionCheckContext,
-	PermissionName,
-} from "../../auth/role/role.interface";
 
 export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 	valid: boolean;
@@ -179,37 +174,3 @@ export const requireAdmin = async (
 		next(error);
 	}
 };
-
-type PermissionContextResolver = (
-	req: Request,
-) => PermissionCheckContext | Promise<PermissionCheckContext>;
-
-export const requirePermission =
-	(permission: PermissionName, resolveContext?: PermissionContextResolver) =>
-	async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-		try {
-			const user = await authenticateRequest(req, res);
-			if (!user) {
-				return;
-			}
-			const baseContext: PermissionCheckContext = { userId: user.id };
-			const resolved = resolveContext ? await resolveContext(req) : undefined;
-			const context = resolved
-				? { ...resolved, userId: resolved.userId ?? baseContext.userId }
-				: baseContext;
-			const allowed = await roleService.hasPermission(
-				user.role,
-				permission,
-				context,
-			);
-			if (!allowed) {
-				res.status(StatusCodes.FORBIDDEN).json({
-					message: "Insufficient permissions.",
-				});
-				return;
-			}
-			next();
-		} catch (error) {
-			next(error);
-		}
-	};

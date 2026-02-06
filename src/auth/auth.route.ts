@@ -2,7 +2,6 @@ import express, { Router } from "express";
 import authController from "./auth.controller";
 import { validate } from "../shared/middleware/validation.middleware";
 import scheme from "./auth.scheme";
-import { requirePermission } from "../shared/middleware/auth.middleware";
 
 class AuthRoutes {
 	private router: Router;
@@ -39,18 +38,6 @@ class AuthRoutes {
 		this.router.post("/login", validate(scheme.login()), authController.login);
 		this.router.post("/refresh", authController.refresh);
 		this.router.post("/logout", authController.logout);
-		this.router.patch(
-			"/role",
-			requirePermission("staff:update"),
-			validate(scheme.updateRole()),
-			authController.updateRole,
-		);
-		this.router.patch(
-			"/disable",
-			requirePermission("staff:update"),
-			validate(scheme.setAccountDisabled()),
-			authController.setAccountDisabled,
-		);
 	}
 }
 export const authRoutes: AuthRoutes = new AuthRoutes();
