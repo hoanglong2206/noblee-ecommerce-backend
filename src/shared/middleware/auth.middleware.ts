@@ -8,7 +8,7 @@ import jwt, {
 } from "jsonwebtoken";
 import { db } from "../../database";
 import { config } from "../../config";
-import { authTable, AuthRecord, AuthRole } from "../../auth/auth.model";
+import { authTable, AuthRecord } from "../../auth/auth.model";
 
 export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 	valid: boolean;
@@ -20,7 +20,7 @@ export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 type AuthenticatedUser = {
 	id: string;
 	email: string;
-	role: AuthRole;
+	role: string;
 };
 
 declare module "express-serve-static-core" {

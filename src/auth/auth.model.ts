@@ -7,7 +7,6 @@ import {
 	integer,
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { roleEnum, RoleValue } from "./role/role.model";
 
 export const authTable = pgTable(
 	"auth",
@@ -18,7 +17,7 @@ export const authTable = pgTable(
 		passwordHash: varchar("password_hash", { length: 255 }).notNull(),
 		isVerified: boolean("is_verified").notNull().default(false),
 		tokenVersion: integer("token_version").notNull().default(0),
-		role: roleEnum("role").notNull().default("customer"),
+		role: varchar("role", { length: 50 }).notNull().default("customer"),
 		isDisabled: boolean("is_disabled").notNull().default(false),
 		createdAt: timestamp("created_at", {
 			withTimezone: true,
@@ -40,4 +39,3 @@ export const authTable = pgTable(
 
 export type AuthRecord = typeof authTable.$inferSelect;
 export type NewAuthRecord = typeof authTable.$inferInsert;
-export type AuthRole = RoleValue;

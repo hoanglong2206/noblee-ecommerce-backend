@@ -1,9 +1,4 @@
 import Joi, { ObjectSchema } from "joi";
-import { roleEnum } from "./role/role.model";
-
-const assignableRoles = roleEnum.enumValues.filter(
-	(role) => role !== "super_admin",
-);
 
 class AuthScheme {
 	public sendOtp(): ObjectSchema {
@@ -38,22 +33,6 @@ class AuthScheme {
 
 	public resendOtp(): ObjectSchema {
 		return this.sendOtp();
-	}
-
-	public updateRole(): ObjectSchema {
-		return Joi.object({
-			targetUserId: Joi.string().guid({ version: "uuidv4" }).required(),
-			role: Joi.string()
-				.valid(...assignableRoles)
-				.required(),
-		});
-	}
-
-	public setAccountDisabled(): ObjectSchema {
-		return Joi.object({
-			targetUserId: Joi.string().guid({ version: "uuidv4" }).required(),
-			disabled: Joi.boolean().required(),
-		});
 	}
 }
 
