@@ -316,7 +316,10 @@ class AuthService {
 
 	private async createTokens(
 		user: Auth,
-		options: { replaceRefreshToken?: string; sessionContext?: SessionContext } = {},
+		options: {
+			replaceRefreshToken?: string;
+			sessionContext?: SessionContext;
+		} = {},
 	): Promise<AuthTokens> {
 		const accessSecret = config.JWT_SECRET ?? "";
 		const refreshSecret = config.JWT_REFRESH_SECRET ?? "";
@@ -355,7 +358,12 @@ class AuthService {
 			await this.deleteRefreshToken(options.replaceRefreshToken);
 		}
 		await this.saveRefreshToken(user.id, refreshToken, expiresAt);
-		await this.saveSession(user.id, refreshToken, expiresAt, options.sessionContext);
+		await this.saveSession(
+			user.id,
+			refreshToken,
+			expiresAt,
+			options.sessionContext,
+		);
 		return {
 			accessToken,
 			refreshToken,
@@ -420,9 +428,7 @@ class AuthService {
 		await db.delete(sessions).where(eq(sessions.userId, userId));
 	}
 
-	private async getSessionByToken(
-		token: string,
-	): Promise<Session | undefined> {
+	private async getSessionByToken(token: string): Promise<Session | undefined> {
 		const result = await db
 			.select()
 			.from(sessions)
