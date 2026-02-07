@@ -2,10 +2,18 @@ import { db } from "../database";
 import { eq } from "drizzle-orm";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import { StatusCodes } from "http-status-codes";
 import { config } from "../config";
 import { verifyToken } from "../shared/middleware/auth.middleware";
-import { authTable, AuthRecord } from "./auth.model";
+import {
+	auth as authTable,
+	Auth,
+	refreshTokens,
+	RefreshToken,
+	sessions,
+	Session,
+} from "./auth.model";
 import {
 	sendOtpDTO,
 	verifyOtpDTO,
@@ -39,7 +47,7 @@ type AuthTokens = {
 	refreshTokenExpiresIn: string;
 };
 
-type PublicAuthRecord = Omit<AuthRecord, "passwordHash">;
+type PublicAuthRecord = Omit<Auth, "passwordHash">;
 
 type AuthResponse = {
 	user: PublicAuthRecord;
@@ -48,7 +56,12 @@ type AuthResponse = {
 
 type RefreshTokenPayload = JwtPayload & {
 	sub?: string;
-	tokenVersion?: number;
+	jti?: string;
+};
+
+type SessionContext = {
+	ipAddress?: string;
+	userAgent?: string;
 };
 
 class AuthService {
@@ -122,7 +135,7 @@ class AuthService {
 				fullname: payload.fullname.trim(),
 				email,
 				passwordHash,
-				isVerified: true,
+				isEmailVerified: true,
 			})
 			.returning();
 		if (!record) {
@@ -132,7 +145,7 @@ class AuthService {
 			);
 		}
 		await deleteOtpData(email);
-		const tokens = this.createTokens(record);
+		const tokens = await this.createTokens(record);
 		await this.enqueueUserProfileCreation(record);
 		return {
 			user: this.sanitizeUser(record),
@@ -140,30 +153,46 @@ class AuthService {
 		};
 	}
 
-	public async login(payload: loginDTO): Promise<AuthResponse> {
+	public async login(
+		payload: loginDTO,
+		context: SessionContext = {},
+	): Promise<AuthResponse> {
 		const email = this.normalizeEmail(payload.email);
 		const user = await this.getUserByEmail(email);
 		if (!user) {
 			throw this.createError("Invalid credentials.", StatusCodes.UNAUTHORIZED);
 		}
-		if (!user.isVerified) {
+		if (!user.isEmailVerified) {
 			throw this.createError("Account not verified.", StatusCodes.FORBIDDEN);
 		}
-		if (user.isDisabled) {
+		if (!user.isActive || user.isDisabled) {
 			throw this.createError("Account disabled.", StatusCodes.FORBIDDEN);
 		}
 		const isMatch = await bcrypt.compare(payload.password, user.passwordHash);
 		if (!isMatch) {
 			throw this.createError("Invalid credentials.", StatusCodes.UNAUTHORIZED);
 		}
-		const tokens = this.createTokens(user);
+		const loginAt = new Date();
+		await this.updateLastLogin(user.id, loginAt);
+		const currentUser: Auth = {
+			...user,
+			lastLoginAt: loginAt,
+			updatedAt: loginAt,
+		};
+		const sessionContext = this.normalizeSessionContext(context);
+		const tokens = await this.createTokens(currentUser, {
+			sessionContext,
+		});
 		return {
-			user: this.sanitizeUser(user),
+			user: this.sanitizeUser(currentUser),
 			tokens,
 		};
 	}
 
-	public async refreshTokens(payload: refreshTokenDTO): Promise<AuthResponse> {
+	public async refreshTokens(
+		payload: refreshTokenDTO,
+		context: SessionContext = {},
+	): Promise<AuthResponse> {
 		const refreshSecret = config.JWT_REFRESH_SECRET;
 		if (!refreshSecret) {
 			throw this.createError(
@@ -176,34 +205,51 @@ class AuthService {
 			refreshSecret,
 		);
 		if (verification.expired) {
+			await this.deleteRefreshToken(payload.refreshToken);
 			throw this.createError(
 				"Refresh token expired.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		if (!verification.valid || !verification.payload) {
+		if (!verification.valid || !verification.payload?.sub) {
 			throw this.createError(
 				"Invalid refresh token.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		if (
-			!verification.payload.sub ||
-			verification.payload.tokenVersion === undefined
-		) {
+		const storedToken = await this.getRefreshTokenRecord(payload.refreshToken);
+		if (!storedToken || storedToken.userId !== verification.payload.sub) {
 			throw this.createError(
-				"Malformed refresh token.",
+				"Invalid refresh token.",
+				StatusCodes.UNAUTHORIZED,
+			);
+		}
+		const sessionRecord = await this.getSessionByToken(payload.refreshToken);
+		if (storedToken.expiresAt <= new Date()) {
+			await this.deleteRefreshToken(payload.refreshToken);
+			throw this.createError(
+				"Refresh token expired.",
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
 		const user = await this.getUserById(verification.payload.sub);
-		if (!user || user.tokenVersion !== verification.payload.tokenVersion) {
-			throw this.createError(
-				"Invalid refresh token.",
-				StatusCodes.UNAUTHORIZED,
-			);
+		if (!user) {
+			await this.deleteRefreshToken(payload.refreshToken);
+			throw this.createError("User not found.", StatusCodes.UNAUTHORIZED);
 		}
-		const tokens = this.createTokens(user);
+		if (!user.isActive || user.isDisabled) {
+			await this.deleteRefreshToken(payload.refreshToken);
+			throw this.createError("Account disabled.", StatusCodes.FORBIDDEN);
+		}
+		if (!user.isEmailVerified) {
+			await this.deleteRefreshToken(payload.refreshToken);
+			throw this.createError("Account not verified.", StatusCodes.FORBIDDEN);
+		}
+		const sessionContext = this.normalizeSessionContext(context, sessionRecord);
+		const tokens = await this.createTokens(user, {
+			replaceRefreshToken: payload.refreshToken,
+			sessionContext,
+		});
 		return {
 			user: this.sanitizeUser(user),
 			tokens,
@@ -223,6 +269,7 @@ class AuthService {
 			refreshSecret,
 		);
 		if (verification.expired) {
+			await this.deleteRefreshToken(refreshToken);
 			throw this.createError(
 				"Refresh token expired.",
 				StatusCodes.UNAUTHORIZED,
@@ -234,23 +281,7 @@ class AuthService {
 				StatusCodes.UNAUTHORIZED,
 			);
 		}
-		await this.revokeRefreshTokens(verification.payload.sub);
-	}
-
-	private async revokeRefreshTokens(userId: string): Promise<void> {
-		const nextVersion = await this.getNextTokenVersion(userId);
-		await db
-			.update(authTable)
-			.set({ tokenVersion: nextVersion })
-			.where(eq(authTable.id, userId));
-	}
-
-	private async getNextTokenVersion(userId: string): Promise<number> {
-		const user = await this.getUserById(userId);
-		if (!user) {
-			throw this.createError("User not found.", StatusCodes.NOT_FOUND);
-		}
-		return user.tokenVersion + 1;
+		await this.deleteUserRefreshTokens(verification.payload.sub);
 	}
 
 	private async ensureEmailNotRegistered(email: string): Promise<void> {
@@ -260,7 +291,7 @@ class AuthService {
 		}
 	}
 
-	private async getUserByEmail(email: string): Promise<AuthRecord | undefined> {
+	private async getUserByEmail(email: string): Promise<Auth | undefined> {
 		const result = await db
 			.select()
 			.from(authTable)
@@ -269,7 +300,7 @@ class AuthService {
 		return result[0];
 	}
 
-	private async getUserById(id: string): Promise<AuthRecord | undefined> {
+	private async getUserById(id: string): Promise<Auth | undefined> {
 		const result = await db
 			.select()
 			.from(authTable)
@@ -278,12 +309,15 @@ class AuthService {
 		return result[0];
 	}
 
-	private sanitizeUser(user: AuthRecord): PublicAuthRecord {
+	private sanitizeUser(user: Auth): PublicAuthRecord {
 		const { passwordHash, ...rest } = user;
 		return rest;
 	}
 
-	private createTokens(user: AuthRecord): AuthTokens {
+	private async createTokens(
+		user: Auth,
+		options: { replaceRefreshToken?: string; sessionContext?: SessionContext } = {},
+	): Promise<AuthTokens> {
 		const accessSecret = config.JWT_SECRET ?? "";
 		const refreshSecret = config.JWT_REFRESH_SECRET ?? "";
 		if (!accessSecret || !refreshSecret) {
@@ -303,6 +337,7 @@ class AuthService {
 			{
 				sub: user.id,
 				email: user.email,
+				role: user.role,
 			},
 			accessSecret,
 			{ expiresIn: accessExpiresSeconds },
@@ -310,17 +345,110 @@ class AuthService {
 		const refreshToken = jwt.sign(
 			{
 				sub: user.id,
-				tokenVersion: user.tokenVersion,
+				jti: randomUUID(),
 			},
 			refreshSecret,
 			{ expiresIn: refreshExpiresSeconds },
 		);
+		const expiresAt = this.getRefreshTokenExpiryDate(refreshExpiresSeconds);
+		if (options.replaceRefreshToken) {
+			await this.deleteRefreshToken(options.replaceRefreshToken);
+		}
+		await this.saveRefreshToken(user.id, refreshToken, expiresAt);
+		await this.saveSession(user.id, refreshToken, expiresAt, options.sessionContext);
 		return {
 			accessToken,
 			refreshToken,
 			accessTokenExpiresIn: accessExpires,
 			refreshTokenExpiresIn: refreshExpires,
 		};
+	}
+
+	private getRefreshTokenExpiryDate(seconds: number): Date {
+		return new Date(Date.now() + seconds * 1000);
+	}
+
+	private async saveRefreshToken(
+		userId: string,
+		token: string,
+		expiresAt: Date,
+	): Promise<void> {
+		await db.insert(refreshTokens).values({ userId, token, expiresAt });
+	}
+
+	private async deleteRefreshToken(token: string): Promise<void> {
+		await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
+		await this.deleteSessionByToken(token);
+	}
+
+	private async deleteUserRefreshTokens(userId: string): Promise<void> {
+		await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
+		await this.deleteSessionsByUser(userId);
+	}
+
+	private async getRefreshTokenRecord(
+		token: string,
+	): Promise<RefreshToken | undefined> {
+		const result = await db
+			.select()
+			.from(refreshTokens)
+			.where(eq(refreshTokens.token, token))
+			.limit(1);
+		return result[0];
+	}
+
+	private async saveSession(
+		userId: string,
+		token: string,
+		expiresAt: Date,
+		context?: SessionContext,
+	): Promise<void> {
+		await db.insert(sessions).values({
+			userId,
+			token,
+			expiresAt,
+			ipAddress: context?.ipAddress,
+			userAgent: context?.userAgent,
+		});
+	}
+
+	private async deleteSessionByToken(token: string): Promise<void> {
+		await db.delete(sessions).where(eq(sessions.token, token));
+	}
+
+	private async deleteSessionsByUser(userId: string): Promise<void> {
+		await db.delete(sessions).where(eq(sessions.userId, userId));
+	}
+
+	private async getSessionByToken(
+		token: string,
+	): Promise<Session | undefined> {
+		const result = await db
+			.select()
+			.from(sessions)
+			.where(eq(sessions.token, token))
+			.limit(1);
+		return result[0];
+	}
+
+	private normalizeSessionContext(
+		context: SessionContext = {},
+		session?: Session,
+	): SessionContext {
+		return {
+			ipAddress: context.ipAddress ?? session?.ipAddress ?? undefined,
+			userAgent: context.userAgent ?? session?.userAgent ?? undefined,
+		};
+	}
+
+	private async updateLastLogin(
+		userId: string,
+		timestamp: Date,
+	): Promise<void> {
+		await db
+			.update(authTable)
+			.set({ lastLoginAt: timestamp, updatedAt: timestamp })
+			.where(eq(authTable.id, userId));
 	}
 
 	private generateOtp(): string {
@@ -376,7 +504,7 @@ class AuthService {
 		return error;
 	}
 
-	private async enqueueUserProfileCreation(user: AuthRecord): Promise<void> {
+	private async enqueueUserProfileCreation(user: Auth): Promise<void> {
 		const message: UserRegisteredMessage = {
 			id: user.id,
 			fullname: user.fullname,

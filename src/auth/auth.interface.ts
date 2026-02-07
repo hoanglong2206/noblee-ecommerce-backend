@@ -21,13 +21,3 @@ export interface loginDTO {
 export interface refreshTokenDTO {
 	refreshToken: string;
 }
-
-export interface updateUserRoleDTO {
-	targetUserId: string;
-	role: string;
-}
-
-export interface setAccountDisabledDTO {
-	targetUserId: string;
-	disabled: boolean;
-}

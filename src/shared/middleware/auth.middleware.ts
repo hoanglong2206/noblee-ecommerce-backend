@@ -8,7 +8,7 @@ import jwt, {
 } from "jsonwebtoken";
 import { db } from "../../database";
 import { config } from "../../config";
-import { authTable, AuthRecord } from "../../auth/auth.model";
+import { auth as authTable, Auth } from "../../auth/auth.model";
 
 export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 	valid: boolean;
@@ -74,7 +74,7 @@ const extractAccessToken = (req: Request): string | undefined => {
 const authenticateRequest = async (
 	req: Request,
 	res: Response,
-): Promise<AuthRecord | undefined> => {
+): Promise<Auth | undefined> => {
 	const accessSecret = config.JWT_SECRET;
 	if (!accessSecret) {
 		res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
@@ -117,13 +117,13 @@ const authenticateRequest = async (
 		});
 		return undefined;
 	}
-	if (user.isDisabled) {
+	if (!user.isActive || user.isDisabled) {
 		res.status(StatusCodes.FORBIDDEN).json({
 			message: "Account disabled.",
 		});
 		return undefined;
 	}
-	if (!user.isVerified) {
+	if (!user.isEmailVerified) {
 		res.status(StatusCodes.FORBIDDEN).json({
 			message: "Account not verified.",
 		});

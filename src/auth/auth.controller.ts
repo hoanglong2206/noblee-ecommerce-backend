@@ -54,7 +54,10 @@ class AuthController {
 
 	public login = async (req: Request, res: Response): Promise<void> => {
 		try {
-			const result = await authService.login(req.body);
+			const result = await authService.login(req.body, {
+				ipAddress: req.ip,
+				userAgent: req.get("user-agent") ?? undefined,
+			});
 			this.setAuthCookies(res, result.tokens);
 			res.status(StatusCodes.OK).json(result);
 		} catch (error) {
@@ -73,7 +76,13 @@ class AuthController {
 				});
 				return;
 			}
-			const result = await authService.refreshTokens({ refreshToken: token });
+			const result = await authService.refreshTokens(
+				{ refreshToken: token },
+				{
+					ipAddress: req.ip,
+					userAgent: req.get("user-agent") ?? undefined,
+				},
+			);
 			this.setAuthCookies(res, result.tokens);
 			res.status(StatusCodes.OK).json(result);
 		} catch (error) {
