@@ -132,7 +132,6 @@ class AuthService {
 		const [record] = await db
 			.insert(authTable)
 			.values({
-				fullname: payload.fullname.trim(),
 				email,
 				passwordHash,
 				isEmailVerified: true,
@@ -146,7 +145,11 @@ class AuthService {
 		}
 		await deleteOtpData(email);
 		const tokens = await this.createTokens(record);
-		await this.enqueueUserProfileCreation(record);
+		await this.enqueueUserProfileCreation({
+			id: record.id,
+			email: record.email,
+			fullname: payload.fullname.trim(),
+		});
 		return {
 			user: this.sanitizeUser(record),
 			tokens,
@@ -165,7 +168,7 @@ class AuthService {
 		if (!user.isEmailVerified) {
 			throw this.createError("Account not verified.", StatusCodes.FORBIDDEN);
 		}
-		if (!user.isActive || user.isDisabled) {
+		if (user.isDisabled) {
 			throw this.createError("Account disabled.", StatusCodes.FORBIDDEN);
 		}
 		const isMatch = await bcrypt.compare(payload.password, user.passwordHash);
@@ -237,7 +240,7 @@ class AuthService {
 			await this.deleteRefreshToken(payload.refreshToken);
 			throw this.createError("User not found.", StatusCodes.UNAUTHORIZED);
 		}
-		if (!user.isActive || user.isDisabled) {
+		if (user.isDisabled) {
 			await this.deleteRefreshToken(payload.refreshToken);
 			throw this.createError("Account disabled.", StatusCodes.FORBIDDEN);
 		}
@@ -282,6 +285,7 @@ class AuthService {
 			);
 		}
 		await this.deleteUserRefreshTokens(verification.payload.sub);
+		await this.setUserActiveState(verification.payload.sub, false);
 	}
 
 	private async ensureEmailNotRegistered(email: string): Promise<void> {
@@ -453,7 +457,17 @@ class AuthService {
 	): Promise<void> {
 		await db
 			.update(authTable)
-			.set({ lastLoginAt: timestamp, updatedAt: timestamp })
+			.set({ lastLoginAt: timestamp, updatedAt: timestamp, isActive: true })
+			.where(eq(authTable.id, userId));
+	}
+
+	private async setUserActiveState(
+		userId: string,
+		isActive: boolean,
+	): Promise<void> {
+		await db
+			.update(authTable)
+			.set({ isActive, updatedAt: new Date() })
 			.where(eq(authTable.id, userId));
 	}
 
@@ -510,7 +524,11 @@ class AuthService {
 		return error;
 	}
 
-	private async enqueueUserProfileCreation(user: Auth): Promise<void> {
+	private async enqueueUserProfileCreation(user: {
+		id: string;
+		fullname: string;
+		email: string;
+	}): Promise<void> {
 		const message: UserRegisteredMessage = {
 			id: user.id,
 			fullname: user.fullname,

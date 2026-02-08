@@ -117,7 +117,7 @@ const authenticateRequest = async (
 		});
 		return undefined;
 	}
-	if (!user.isActive || user.isDisabled) {
+	if (user.isDisabled) {
 		res.status(StatusCodes.FORBIDDEN).json({
 			message: "Account disabled.",
 		});

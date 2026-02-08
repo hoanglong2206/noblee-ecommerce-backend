@@ -15,11 +15,10 @@ export const auth = pgTable(
 	"auth",
 	{
 		id: uuid("id").defaultRandom().primaryKey(),
-		fullname: varchar("full_name", { length: 255 }).notNull(),
 		email: varchar("email", { length: 255 }).notNull().unique(),
 		passwordHash: text("password_hash").notNull(),
 		role: varchar("role", { length: 50 }).notNull().default("customer"),
-		isActive: boolean("is_active").notNull().default(true),
+		isActive: boolean("is_active").notNull().default(false),
 		isDisabled: boolean("is_disabled").notNull().default(false),
 		isEmailVerified: boolean("is_email_verified").notNull().default(false),
 		lastLoginAt: timestamp("last_login_at"),
