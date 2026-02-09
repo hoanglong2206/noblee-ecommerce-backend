@@ -128,7 +128,7 @@ class AuthService {
 			);
 		}
 		await this.ensureEmailNotRegistered(email);
-		const fullName = payload.fullname.trim();
+		const fullName = payload.fullName.trim();
 		if (!fullName) {
 			throw this.createError("Full name is required.", StatusCodes.BAD_REQUEST);
 		}

@@ -3,7 +3,7 @@ import Joi, { ObjectSchema } from "joi";
 class UserScheme {
 	public updateProfile(): ObjectSchema {
 		return Joi.object({
-			fullname: Joi.string().min(3).max(100).trim(),
+			fullName: Joi.string().min(3).max(100).trim(),
 			phoneNumber: Joi.string().max(20).trim().allow("", null),
 			gender: Joi.string()
 				.valid("male", "female", "other", "prefer_not_to_say")

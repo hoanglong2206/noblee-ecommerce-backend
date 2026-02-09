@@ -19,7 +19,7 @@ class AuthScheme {
 	public register(): ObjectSchema {
 		return Joi.object({
 			email: Joi.string().email().lowercase().trim().required(),
-			fullname: Joi.string().min(3).max(100).trim().required(),
+			fullName: Joi.string().min(3).max(100).trim().required(),
 			password: Joi.string().min(8).max(128).required(),
 		});
 	}
