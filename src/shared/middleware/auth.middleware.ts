@@ -20,7 +20,6 @@ export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 type AuthenticatedUser = {
 	id: string;
 	email: string;
-	role: string;
 };
 
 declare module "express-serve-static-core" {
@@ -132,7 +131,6 @@ const authenticateRequest = async (
 	req.authUser = {
 		id: user.id,
 		email: user.email,
-		role: user.role,
 	};
 	return user;
 };
@@ -145,28 +143,6 @@ export const requireAuth = async (
 	try {
 		const user = await authenticateRequest(req, res);
 		if (!user) {
-			return;
-		}
-		next();
-	} catch (error) {
-		next(error);
-	}
-};
-
-export const requireAdmin = async (
-	req: Request,
-	res: Response,
-	next: NextFunction,
-): Promise<void> => {
-	try {
-		const user = await authenticateRequest(req, res);
-		if (!user) {
-			return;
-		}
-		if (user.role !== "admin" && user.role !== "super_admin") {
-			res.status(StatusCodes.FORBIDDEN).json({
-				message: "Admin access required.",
-			});
 			return;
 		}
 		next();

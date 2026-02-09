@@ -128,6 +128,10 @@ class AuthService {
 			);
 		}
 		await this.ensureEmailNotRegistered(email);
+		const fullName = payload.fullname.trim();
+		if (!fullName) {
+			throw this.createError("Full name is required.", StatusCodes.BAD_REQUEST);
+		}
 		const passwordHash = await bcrypt.hash(payload.password, this.saltRounds);
 		const [record] = await db
 			.insert(authTable)
@@ -148,7 +152,7 @@ class AuthService {
 		await this.enqueueUserProfileCreation({
 			id: record.id,
 			email: record.email,
-			fullname: payload.fullname.trim(),
+			fullname: fullName,
 		});
 		return {
 			user: this.sanitizeUser(record),
@@ -175,7 +179,7 @@ class AuthService {
 		if (!isMatch) {
 			throw this.createError("Invalid credentials.", StatusCodes.UNAUTHORIZED);
 		}
-		const loginAt = new Date();
+		const loginAt = new Date().toISOString();
 		await this.updateLastLogin(user.id, loginAt);
 		const currentUser: Auth = {
 			...user,
@@ -228,7 +232,7 @@ class AuthService {
 			);
 		}
 		const sessionRecord = await this.getSessionByToken(payload.refreshToken);
-		if (storedToken.expiresAt <= new Date()) {
+		if (this.hasExpired(storedToken.expiresAt)) {
 			await this.deleteRefreshToken(payload.refreshToken);
 			throw this.createError(
 				"Refresh token expired.",
@@ -344,7 +348,6 @@ class AuthService {
 			{
 				sub: user.id,
 				email: user.email,
-				role: user.role,
 			},
 			accessSecret,
 			{ expiresIn: accessExpiresSeconds },
@@ -376,14 +379,22 @@ class AuthService {
 		};
 	}
 
-	private getRefreshTokenExpiryDate(seconds: number): Date {
-		return new Date(Date.now() + seconds * 1000);
+	private getRefreshTokenExpiryDate(seconds: number): string {
+		return new Date(Date.now() + seconds * 1000).toISOString();
+	}
+
+	private hasExpired(value: string | Date): boolean {
+		const expiry = typeof value === "string" ? new Date(value) : value;
+		if (Number.isNaN(expiry.getTime())) {
+			return true;
+		}
+		return expiry.getTime() <= Date.now();
 	}
 
 	private async saveRefreshToken(
 		userId: string,
 		token: string,
-		expiresAt: Date,
+		expiresAt: string,
 	): Promise<void> {
 		await db.insert(refreshTokens).values({ userId, token, expiresAt });
 	}
@@ -412,7 +423,7 @@ class AuthService {
 	private async saveSession(
 		userId: string,
 		token: string,
-		expiresAt: Date,
+		expiresAt: string,
 		context?: SessionContext,
 	): Promise<void> {
 		await db.insert(sessions).values({
@@ -453,11 +464,15 @@ class AuthService {
 
 	private async updateLastLogin(
 		userId: string,
-		timestamp: Date,
+		timestamp: string,
 	): Promise<void> {
 		await db
 			.update(authTable)
-			.set({ lastLoginAt: timestamp, updatedAt: timestamp, isActive: true })
+			.set({
+				lastLoginAt: timestamp,
+				updatedAt: timestamp,
+				isActive: true,
+			})
 			.where(eq(authTable.id, userId));
 	}
 
@@ -465,9 +480,10 @@ class AuthService {
 		userId: string,
 		isActive: boolean,
 	): Promise<void> {
+		const updatedAt = new Date().toISOString();
 		await db
 			.update(authTable)
-			.set({ isActive, updatedAt: new Date() })
+			.set({ isActive, updatedAt })
 			.where(eq(authTable.id, userId));
 	}
 
