@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import jwt, {
 	JwtPayload,
 	TokenExpiredError,
@@ -9,6 +9,12 @@ import jwt, {
 import { db } from "../../database";
 import { config } from "../../config";
 import { auth as authTable, Auth } from "../../auth/auth.model";
+import {
+	userRoles,
+	roles,
+	rolePermissions,
+	permissions,
+} from "../../role/role.model";
 
 export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 	valid: boolean;
@@ -20,6 +26,8 @@ export type VerifyTokenResult<T extends JwtPayload = JwtPayload> = {
 type AuthenticatedUser = {
 	id: string;
 	email: string;
+	roles: string[];
+	permissions: string[];
 };
 
 declare module "express-serve-static-core" {
@@ -128,9 +136,15 @@ const authenticateRequest = async (
 		});
 		return undefined;
 	}
+
+	const { roles: userRoleNames, permissions: userPermissions } =
+		await getUserRolesAndPermissions(user.id);
+
 	req.authUser = {
 		id: user.id,
 		email: user.email,
+		roles: userRoleNames,
+		permissions: userPermissions,
 	};
 	return user;
 };
@@ -145,8 +159,53 @@ export const requireAuth = async (
 		if (!user) {
 			return;
 		}
+		console.log(req.authUser);
 		next();
 	} catch (error) {
 		next(error);
 	}
+};
+
+export const requirePermission = (permission: string) => {
+	return async (req: Request, res: Response, next: NextFunction) => {
+		await requireAuth(req, res, async () => {
+			if (!req.authUser?.permissions.includes(permission)) {
+				res.status(StatusCodes.FORBIDDEN).json({
+					message: `Required permission: ${permission}`,
+				});
+				return;
+			}
+			next();
+		});
+	};
+};
+
+const getUserRolesAndPermissions = async (userId: string) => {
+	const userRoleRows = await db
+		.select({ roleId: userRoles.roleId, roleName: roles.displayName })
+		.from(userRoles)
+		.innerJoin(roles, eq(userRoles.roleId, roles.id))
+		.where(eq(userRoles.userId, userId));
+
+	if (!userRoleRows.length) {
+		return { roles: [], permissions: [] };
+	}
+
+	const roleIds = userRoleRows.map((r) => r.roleId);
+	const roleNames = userRoleRows.map((r) => r.roleName);
+
+	const permissionRows = await db
+		.select({
+			resource: permissions.resource,
+			action: permissions.action,
+		})
+		.from(rolePermissions)
+		.innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+		.where(inArray(rolePermissions.roleId, roleIds));
+
+	const permissionNames = [
+		...new Set(permissionRows.map((p) => `${p.resource}:${p.action}`)),
+	];
+
+	return { roles: roleNames, permissions: permissionNames };
 };
